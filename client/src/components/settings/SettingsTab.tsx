@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Race, RaceSettings, AniméSlot, LapGaugeMode, HeaderStatConfig } from '../../types'
+import type { Race, RaceSettings, AniméSlot, LapGaugeMode, HeaderStatConfig, PublicViewSettings } from '../../types'
 import { updateSettings, finishRace, reopenRace, pauseRace, resumeRace } from '../../api'
 import BackupPanel from '../backup/BackupPanel'
 import { downloadReportPdf, downloadReportPng } from '../../lib/reportGenerator'
@@ -21,15 +21,28 @@ const DEFAULT_ACCENT = '#6366f1'
 
 const BIKE_IDS = ['V1', 'V2', 'V3'] as const
 
-type SectionId = 'velos' | 'course' | 'interface' | 'donnees' | 'info'
+type SectionId = 'velos' | 'course' | 'interface' | 'public' | 'donnees' | 'info'
 
 const SECTIONS: { id: SectionId; label: string; sub: string }[] = [
-  { id: 'velos',      label: 'Vélos',      sub: 'Config, alertes, jauge' },
-  { id: 'course',     label: 'Course',     sub: 'Circuit, mode animés' },
-  { id: 'interface',  label: 'Interface',  sub: 'Couleur, réseau' },
-  { id: 'donnees',    label: 'Données',    sub: 'Exports, backup, reset' },
-  { id: 'info',       label: 'Info',       sub: 'Comment ça marche' },
+  { id: 'velos',      label: 'Vélos',        sub: 'Config, alertes, jauge' },
+  { id: 'course',     label: 'Course',       sub: 'Circuit, mode animés' },
+  { id: 'interface',  label: 'Interface',    sub: 'Couleur, réseau' },
+  { id: 'public',     label: 'Vue publique', sub: 'Écran équipes' },
+  { id: 'donnees',    label: 'Données',      sub: 'Exports, backup, reset' },
+  { id: 'info',       label: 'Info',         sub: 'Comment ça marche' },
 ]
+
+const PV_DEFAULTS: Required<PublicViewSettings> = {
+  showClock: true,
+  showRaceDuration: true,
+  showCurrentRider: true,
+  showChrono: true,
+  showGauge: true,
+  showQueue: true,
+  queueMaxEntries: 10,
+  showBikeStats: true,
+  showGlobalStats: true,
+}
 
 export default function SettingsTab({ race, onUpdate, onRestore }: Props) {
   const [activeSection, setActiveSection] = useState<SectionId>('velos')
@@ -809,10 +822,100 @@ export default function SettingsTab({ race, onUpdate, onRestore }: Props) {
     </div>
   )
 
+  const pvSettings = s.publicView ?? {}
+  const pv: Required<PublicViewSettings> = { ...PV_DEFAULTS, ...pvSettings }
+  const savePV = (partial: Partial<PublicViewSettings>) =>
+    save({ publicView: { ...pvSettings, ...partial } })
+
+  type BoolPVKey = Exclude<keyof Required<PublicViewSettings>, 'queueMaxEntries'>
+  const pvToggle = (label: string, key: BoolPVKey, description?: string) => (
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={pv[key] as boolean}
+        onChange={e => savePV({ [key]: e.target.checked })}
+        disabled={saving}
+        style={{ marginTop: 2, flexShrink: 0 }}
+      />
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{label}</div>
+        {description && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{description}</div>}
+      </div>
+    </label>
+  )
+
+  const sectionPublic = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+
+      <div className="card">
+        <div className="card-header">
+          <span style={{ fontWeight: 600 }}>Vue publique</span>
+          <span className="text-muted fs-12">Second écran face aux équipes</span>
+        </div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+            Ouvrez cette page dans un onglet, puis déplacez-la sur le second écran. Elle se met à jour automatiquement.
+          </p>
+          <button
+            className="btn btn-primary"
+            style={{ alignSelf: 'flex-start', fontSize: 13, padding: '0.4rem 0.9rem' }}
+            onClick={() => window.open('/public', '_blank')}
+          >
+            Ouvrir la vue publique ↗
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <span style={{ fontWeight: 600 }}>En-tête</span>
+          <span className="text-muted fs-12">Barre supérieure de l'écran</span>
+        </div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          {pvToggle('Horloge', 'showClock', "L'heure actuelle en grand au centre")}
+          {pvToggle('Durée de la course', 'showRaceDuration', 'Temps écoulé depuis le départ de la course')}
+          {pvToggle('Stats globales', 'showGlobalStats', 'Total tours et km tous vélos confondus')}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <span style={{ fontWeight: 600 }}>Colonnes vélo</span>
+          <span className="text-muted fs-12">Informations affichées pour chaque vélo</span>
+        </div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          {pvToggle('Coureur en piste', 'showCurrentRider', 'Nom affiché en grand')}
+          {pvToggle('Chronomètre', 'showChrono', 'Temps du tour en cours (ou transition)')}
+          {pvToggle('Jauge de progression', 'showGauge', "Barre d'avancement par rapport à la cible configurée dans Vélos")}
+          {pvToggle('File d\'attente', 'showQueue', 'Liste des prochains coureurs')}
+          {pv.showQueue && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingLeft: '1.6rem' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Nombre de coureurs à afficher</span>
+              <select
+                className="input"
+                style={{ width: 'auto', padding: '0.25rem 0.45rem', fontSize: 12 }}
+                value={pv.queueMaxEntries}
+                onChange={e => savePV({ queueMaxEntries: parseInt(e.target.value) })}
+                disabled={saving}
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {pvToggle('Stats par vélo', 'showBikeStats', 'Tours et km individuels pour chaque vélo')}
+        </div>
+      </div>
+
+    </div>
+  )
+
   const sectionContent: Record<SectionId, React.ReactNode> = {
     velos:      sectionVelos,
     course:     sectionCourse,
     interface:  sectionInterface,
+    public:     sectionPublic,
     donnees:    sectionDonnees,
     info:       sectionInfo,
   }

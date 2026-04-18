@@ -24,11 +24,22 @@ router.get('/', (req: Request, res: Response) => {
   res.json(response)
 })
 
+// C8: Only these fields may be edited on a lap
+const ALLOWED_LAP_UPDATES = new Set<keyof Lap>(['riderName', 'riderName2', 'durationMs', 'startTimestamp', 'endTimestamp', 'notes'])
+
 // PUT /api/laps/:lapId — edit a lap
 router.put('/:lapId', (req: Request, res: Response) => {
   const { lapId } = req.params
   const race = getRace()
-  const updates = req.body as Partial<Lap>
+  const raw = req.body as Record<string, unknown>
+  const updates: Partial<Lap> = {}
+  for (const key of ALLOWED_LAP_UPDATES) {
+    if (raw[key] !== undefined) (updates as Record<string, unknown>)[key] = raw[key]
+  }
+  if ('durationMs' in updates && (typeof updates.durationMs !== 'number' || updates.durationMs <= 0)) {
+    res.status(400).json({ success: false, error: 'durationMs must be a positive number', timestamp: new Date().toISOString() })
+    return
+  }
 
   for (const bikeId of ALL_BIKES) {
     const idx = race.bikes[bikeId].laps.findIndex((l) => l.id === lapId)

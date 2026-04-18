@@ -43,8 +43,17 @@ router.put('/:bikeId', (req: Request, res: Response) => {
   const { bikeId } = req.params
   if (!validBike(bikeId)) { res.status(400).json({ success: false, error: 'Invalid bikeId', timestamp: new Date().toISOString() }); return }
 
-  const queue = req.body as QueueEntry[]
-  if (!Array.isArray(queue)) { res.status(400).json({ success: false, error: 'Body must be an array', timestamp: new Date().toISOString() }); return }
+  const raw = req.body
+  if (!Array.isArray(raw)) { res.status(400).json({ success: false, error: 'Body must be an array', timestamp: new Date().toISOString() }); return }
+  // C8: Validate and sanitise each entry — only keep known safe fields
+  const queue: QueueEntry[] = raw
+    .filter((e): e is Record<string, unknown> => e !== null && typeof e === 'object')
+    .filter(e => typeof e.id === 'string' && typeof e.riderName === 'string')
+    .map(e => ({
+      id: String(e.id),
+      riderName: String(e.riderName).trim(),
+      ...(e.riderName2 && typeof e.riderName2 === 'string' ? { riderName2: e.riderName2.trim() } : {}),
+    }))
 
   const race = getRace()
   const updatedBike = { ...race.bikes[bikeId], queue }

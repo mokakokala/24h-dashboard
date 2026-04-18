@@ -7,6 +7,14 @@ interface Props { race: Race; onUpdate: () => void }
 
 const fmt = (iso: string) => new Date(iso).toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
+// M2: Build a datetime-local input value using local time (not UTC).
+// toISOString() always returns UTC, which shifts the displayed value by ±1h.
+const toLocalDatetimeInput = (iso: string): string => {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const isCorrected = (lap: Lap): boolean =>
   Math.abs(lap.durationMs - (Date.parse(lap.endTimestamp) - Date.parse(lap.startTimestamp))) > 2000
 
@@ -89,7 +97,7 @@ function LapCell({
   )
   return (
     <td
-      onClick={() => setEditing({ lapId: lap.id, field, value: type === 'datetime-local' ? new Date(value).toISOString().slice(0, 16) : value })}
+      onClick={() => setEditing({ lapId: lap.id, field, value: type === 'datetime-local' ? toLocalDatetimeInput(value) : value })}
       style={{ cursor: 'pointer' }}
       title="Cliquer pour modifier"
     >

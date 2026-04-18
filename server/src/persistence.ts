@@ -67,14 +67,13 @@ export const getRace = (): Race => {
 }
 
 export const setRace = (newState: Race): void => {
-  // Push current state to undo stack before overwriting
   if (raceState) {
     undoStack.push(JSON.parse(JSON.stringify(raceState)))
     if (undoStack.length > MAX_UNDO) undoStack.shift()
   }
   newState.lastSavedAt = new Date().toISOString()
   raceState = newState
-  saveRaceState(newState)
+  scheduleWrite(newState)
 }
 
 export const undoLast = (): Race | null => {
@@ -82,11 +81,38 @@ export const undoLast = (): Race | null => {
   const prev = undoStack.pop()!
   prev.lastSavedAt = new Date().toISOString()
   raceState = prev
-  saveRaceState(prev)
+  scheduleWrite(prev)
   return prev
 }
 
 export const canUndo = (): boolean => undoStack.length > 0
+
+// ─── Async Write Queue (C4+C5) ───────────────────────────────────────────────
+// Serialises disk writes so they never block the event loop and never overlap.
+// Rapid consecutive saves coalesce — only the latest state is written.
+
+let writeInProgress = false
+let pendingWrite: Race | null = null
+
+const scheduleWrite = (race: Race): void => {
+  pendingWrite = race
+  if (!writeInProgress) processWriteQueue()
+}
+
+const processWriteQueue = async (): Promise<void> => {
+  if (!pendingWrite) return
+  writeInProgress = true
+  const toWrite = pendingWrite
+  pendingWrite = null
+  try {
+    await saveRaceState(toWrite)
+  } catch (err) {
+    console.error('⚠️  Failed to persist race state:', err)
+  } finally {
+    writeInProgress = false
+    if (pendingWrite) processWriteQueue()
+  }
+}
 
 // ─── Load / Save ─────────────────────────────────────────────────────────────
 
@@ -102,7 +128,7 @@ export const loadRaceState = (): Race => {
 
   try {
     const raw = fs.readFileSync(STATE_FILE, 'utf-8')
-    const parsed = JSON.parse(raw) as Race
+    const parsed = JSON.parse(raw.trim()) as Race
 
     if (parsed.schemaVersion !== 1 || !parsed.bikes || !parsed.bikes.V1 || !parsed.bikes.V2) {
       throw new Error('Invalid schema')
@@ -159,29 +185,62 @@ export const loadRaceState = (): Race => {
     raceState = parsed
     return parsed
   } catch (err) {
-    console.error('⚠️  Failed to parse state file, starting fresh:', err)
+    // C6: Never silently wipe a race. Rename the broken file so it can be recovered manually.
+    try {
+      const corruptName = `race_state.corrupt-${Date.now()}.json`
+      fs.renameSync(STATE_FILE, path.join(DATA_DIR, corruptName))
+      console.error(`⚠️  Race file was corrupt — preserved as ${corruptName}. Attempting last backup…`)
+    } catch { /* rename failed, file may not exist */ }
+
+    // Try the most recent backup before giving up
+    const backups = listBackups()
+    if (backups.length > 0) {
+      try {
+        console.log(`↩  Restoring from backup: ${backups[0]}`)
+        return restoreFromBackup(backups[0])
+      } catch (backupErr) {
+        console.error('⚠️  Backup restore also failed:', backupErr)
+      }
+    }
+
+    console.error('⚠️  No usable backup found. Starting with a blank race.')
     const fresh = createDefaultRace()
     raceState = fresh
     return fresh
   }
 }
 
-const saveRaceState = (race: Race): void => {
+const MAX_BACKUPS = 50
+
+const saveRaceState = async (race: Race): Promise<void> => {
   const json = JSON.stringify(race, null, 2)
 
-  // Atomic JSON write
-  fs.writeFileSync(TEMP_FILE, json, 'utf-8')
-  fs.renameSync(TEMP_FILE, STATE_FILE)
+  // Atomic write: temp file → rename (C5: fully async, never blocks event loop)
+  await fs.promises.writeFile(TEMP_FILE, json, 'utf-8')
+  await fs.promises.rename(TEMP_FILE, STATE_FILE)
 
-  // Async timestamped backup
+  // Timestamped backup (fire and forget)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const backupFile = path.join(BACKUPS_DIR, `race_state_${timestamp}.json`)
-  fs.writeFile(backupFile, json, 'utf-8', (err) => {
-    if (err) console.error('⚠️  Backup write failed:', err)
-  })
+  fs.promises.writeFile(backupFile, json, 'utf-8')
+    .then(() => rotateBackups())
+    .catch(err => console.error('⚠️  Backup write failed:', err))
 
   // Real-time CSV backup (fire and forget)
   writeCsvBackup(race)
+}
+
+// C7: Keep only the newest MAX_BACKUPS files, delete the rest
+const rotateBackups = async (): Promise<void> => {
+  try {
+    const files = (await fs.promises.readdir(BACKUPS_DIR))
+      .filter(f => f.endsWith('.json'))
+      .sort() // oldest first (filenames are ISO timestamps)
+    if (files.length > MAX_BACKUPS) {
+      const toDelete = files.slice(0, files.length - MAX_BACKUPS)
+      await Promise.all(toDelete.map(f => fs.promises.unlink(path.join(BACKUPS_DIR, f)).catch(() => {})))
+    }
+  } catch { /* non-critical */ }
 }
 
 const writeCsvBackup = (race: Race): void => {

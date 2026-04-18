@@ -17,6 +17,12 @@ router.post('/', (req: Request, res: Response) => {
     return
   }
   const race = getRace()
+  // M9: Return existing rider if name already taken (case-insensitive) — prevents duplicates
+  const existing = race.riders.find(r => r.name.toLowerCase() === name.trim().toLowerCase())
+  if (existing) {
+    res.status(200).json({ success: true, data: existing, timestamp: new Date().toISOString() })
+    return
+  }
   const rider: Rider = {
     id: uuidv4(),
     name: name.trim(),

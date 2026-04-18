@@ -40,12 +40,14 @@ interface RiderStat {
 const buildRiderStats = (race: Race, enabledIds: BikeId[]): RiderStat[] => {
   const dist = race.settings.circuitDistanceKm
   const allLaps = enabledIds.flatMap(id => race.bikes[id].laps)
-  const map = new Map<string, Lap[]>()
+  // M19: Key by riderId so two riders with the same display name stay separate
+  const map = new Map<string, { name: string; laps: Lap[] }>()
   for (const lap of allLaps) {
-    if (!map.has(lap.riderName)) map.set(lap.riderName, [])
-    map.get(lap.riderName)!.push(lap)
+    const key = lap.riderId || lap.riderName
+    if (!map.has(key)) map.set(key, { name: lap.riderName, laps: [] })
+    map.get(key)!.laps.push(lap)
   }
-  return Array.from(map.entries()).map(([name, laps]) => {
+  return Array.from(map.values()).map(({ name, laps }) => {
     const totalMs = laps.reduce((s, l) => s + l.durationMs, 0)
     const avgSpeed = totalMs > 0 ? parseFloat(((laps.length * dist) / (totalMs / 3_600_000)).toFixed(2)) : 0
     const durations = laps.map(l => l.durationMs)

@@ -74,10 +74,27 @@ router.post('/reset', (req: Request, res: Response) => {
   res.json(response)
 })
 
+// C8: Keys that clients are allowed to set on RaceSettings
+const ALLOWED_SETTING_KEYS = new Set([
+  'relayAlertThresholdMs', 'lapAlertMs', 'lapAlertEnabled',
+  'lapGaugeEnabled', 'lapGaugeMode', 'lapGaugeMs',
+  'circuitDistanceKm', 'raceDurationMs', 'raceName',
+  'enabledBikes', 'bikeLabels',
+  'animéOnlyMode', 'animéSchedule',
+  'headerStats', 'timezone',
+  'clockDateFormat', 'clockShowSeconds', 'clockHourFormat',
+  'lapAlertSoundEnabled', 'publicView',
+])
+
 // PUT /api/race/settings
 router.put('/settings', (req: Request, res: Response) => {
   const race = getRace()
-  const newSettings = { ...race.settings, ...req.body }
+  const raw = req.body as Record<string, unknown>
+  const safeUpdates: Record<string, unknown> = {}
+  for (const key of ALLOWED_SETTING_KEYS) {
+    if (raw[key] !== undefined) safeUpdates[key] = raw[key]
+  }
+  const newSettings = { ...race.settings, ...safeUpdates }
 
   // Sync bike labels into bike.label when bikeLabels is updated
   let bikes = race.bikes

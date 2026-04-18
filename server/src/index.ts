@@ -23,7 +23,8 @@ const PORT = process.env.PORT ?? 3001
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
-app.use(cors())
+// C2+C3: Only accept requests from the local machine
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3001', 'http://127.0.0.1:5173', 'http://127.0.0.1:3001'] }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
@@ -77,16 +78,13 @@ const getLanIp = (): string => {
 const startServer = () => {
   loadRaceState()
 
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    const lan = getLanIp()
+  // C2: Bind to localhost only — not reachable from other devices on the network
+  app.listen(Number(PORT), '127.0.0.1', () => {
     console.log('')
     console.log('╔══════════════════════════════════════════════════╗')
     console.log('║        🚴 24H VÉLO — RACE DASHBOARD              ║')
     console.log('╠══════════════════════════════════════════════════╣')
-    console.log(`║  Local  :  http://localhost:${PORT}                  ║`)
-    console.log(`║  Réseau :  http://${lan}:${PORT}               ║`)
-    console.log('╠══════════════════════════════════════════════════╣')
-    console.log('║  Partage WiFi : accès via l\'IP réseau ci-dessus  ║')
+    console.log(`║  http://localhost:${PORT}                            ║`)
     console.log('╚══════════════════════════════════════════════════╝')
     console.log('')
   })

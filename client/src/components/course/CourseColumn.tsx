@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { BikeState, Rider, Race, QueueEntry } from '../../types'
-import { pitTour, pitStop, pitStart, createRider, addToQueue, removeFromQueue, replaceQueue, updateLap, updateCurrentRider, deleteLap } from '../../api'
+import { pitTour, pitStop, pitStart, pitStartFromQueue, createRider, addToQueue, removeFromQueue, replaceQueue, updateLap, updateCurrentRider, deleteLap } from '../../api'
 import { useTimer, formatMs } from '../../hooks/useTimer'
 import RiderInput from './RiderInput'
 import LapGauge from './LapGauge'
@@ -196,10 +196,13 @@ export default function CourseColumn({ bike, riders, settings, onUpdate, scrollT
     try {
       const name = pendingName.trim()
       const riderId = name ? await resolveOrCreate(name) : 'unknown'
-      if (name && bike.queue[0]?.riderName.toLowerCase() === name.toLowerCase()) {
-        await removeFromQueue(bike.id, bike.queue[0].id)
-      }
-      const res = await pitStart({ bikeId: bike.id, riderId, riderName: name })
+      // M8: If the name matches the first queue entry, use the atomic endpoint
+      // that dequeues and starts in one server call — no partial-failure risk.
+      const matchingQueueEntry = name && bike.queue[0]?.riderName.toLowerCase() === name.toLowerCase()
+        ? bike.queue[0] : undefined
+      const res = matchingQueueEntry
+        ? await pitStartFromQueue({ bikeId: bike.id, riderId, riderName: name, dequeueEntryId: matchingQueueEntry.id })
+        : await pitStart({ bikeId: bike.id, riderId, riderName: name })
       if (!res.success) setErr(res.error ?? 'Erreur')
       else { setPendingName(''); onUpdate() }
     } finally { setLoading(false) }

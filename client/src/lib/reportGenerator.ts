@@ -123,7 +123,7 @@ export function generateReportCanvas(race: Race, accentHex: string): HTMLCanvasE
   const RIDER_ROW_H = 30
   const TABLE_HDR_H = 34
   const FOOTER_H    = 72
-  const maxRiders   = Math.min(data.riders.length, 25)
+  const maxRiders   = data.riders.length // M20: no arbitrary cap
 
   const totalH = HEADER_H
     + GAP + LABEL_H + STATS_H
@@ -361,15 +361,6 @@ export function generateReportCanvas(race: Race, accentHex: string): HTMLCanvasE
     ctx.beginPath(); ctx.moveTo(PAD, ry + RIDER_ROW_H); ctx.lineTo(PAD + TABLE_W, ry + RIDER_ROW_H); ctx.stroke()
   })
 
-  if (data.riders.length > maxRiders) {
-    const ry = y + maxRiders * RIDER_ROW_H
-    ctx.fillStyle = '#94a3b8'
-    ctx.font = `italic 11px system-ui,-apple-system,Arial`
-    ctx.textAlign = 'center'
-    ctx.fillText(`… et ${data.riders.length - maxRiders} coureurs supplémentaires`, PAD + TABLE_W / 2, ry + 16)
-    ctx.textAlign = 'left'
-    y += 24
-  }
 
   y += maxRiders * RIDER_ROW_H + GAP
 

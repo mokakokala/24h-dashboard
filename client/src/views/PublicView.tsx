@@ -1,197 +1,359 @@
 import { useRaceState } from '../hooks/useRaceState'
 import { useTimer } from '../hooks/useTimer'
-import { useDayNight } from '../hooks/useDayNight'
-import type { BikeState, Race } from '../types'
+import { useClock } from '../hooks/useClock'
+import LapGauge from '../components/course/LapGauge'
+import type { BikeState, Race, BikeId, PublicViewSettings } from '../types'
 
-function PublicBikeCard({ bike, alertThresholdMs, bikeLabel }: { bike: BikeState; alertThresholdMs: number; bikeLabel: string }) {
-  const lapTimer = useTimer(bike.currentLapStartTimestamp, bike.status === 'RUNNING')
-  const transitionTimer = useTimer(bike.transitionStartTimestamp, bike.status === 'TRANSITION')
-
-  const elapsed = bike.currentLapStartTimestamp ? Date.now() - Date.parse(bike.currentLapStartTimestamp) : 0
-  const isAlert = bike.status === 'RUNNING' && elapsed > alertThresholdMs
-
-  return (
-    <div style={{
-      background: 'var(--bg-panel)',
-      border: `2px solid ${bike.status === 'RUNNING' ? (isAlert ? 'var(--accent-orange)' : 'var(--accent-green-dim)') : bike.status === 'TRANSITION' ? 'var(--accent-yellow)' : 'var(--border)'}`,
-      borderRadius: '6px',
-      padding: '1.5rem',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '1rem',
-      flex: 1,
-      minWidth: '280px',
-      boxShadow: bike.status === 'RUNNING' ? (isAlert ? 'var(--glow-orange)' : '0 0 20px rgba(0,255,65,0.1)') : bike.status === 'TRANSITION' ? '0 0 20px rgba(240,224,64,0.15)' : 'none',
-      animation: isAlert ? 'pulse-orange 2s ease-in-out infinite' : 'none',
-    }}>
-      {/* Bike label */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 900, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-          {bikeLabel}
-        </div>
-        <span className={`badge badge-${bike.status.toLowerCase()}`} style={{ fontSize: '0.75rem' }}>
-          {bike.status === 'RUNNING' ? 'EN PISTE' : bike.status === 'TRANSITION' ? 'TRANSITION' : 'ARRÊT'}
-        </span>
-      </div>
-
-      {/* Current rider */}
-      <div>
-        <div style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'var(--text-secondary)', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
-          {bike.status === 'TRANSITION' ? 'DERNIER COUREUR' : 'COUREUR EN PISTE'}
-        </div>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '1.8rem',
-          fontWeight: 700,
-          color: bike.status === 'TRANSITION' ? 'var(--accent-yellow)' : isAlert ? 'var(--accent-orange)' : 'var(--accent-green)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          lineHeight: 1.1,
-        }}>
-          {bike.status === 'TRANSITION' ? (bike.currentTransition?.incomingRiderName ?? bike.currentRiderName ?? '—') : bike.currentRiderName ?? '—'}
-        </div>
-      </div>
-
-      {/* Timer */}
-      {bike.status === 'RUNNING' && (
-        <div style={{ textAlign: 'center' }}>
-          {isAlert && (
-            <div className="alert-banner" style={{ marginBottom: '0.5rem', fontSize: '0.8rem' }}>
-              ⚠ RELAIS LONG
-            </div>
-          )}
-          <div className={`timer-main${isAlert ? ' text-orange' : ''}`} style={isAlert ? { textShadow: 'var(--glow-orange)', fontSize: '3rem' } : { fontSize: '3rem' }}>
-            {lapTimer}
-          </div>
-        </div>
-      )}
-      {bike.status === 'TRANSITION' && (
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '0.7rem', letterSpacing: '0.15em', color: 'var(--accent-yellow)', marginBottom: '0.2rem', textTransform: 'uppercase' }}>Temps de changement</div>
-          <div className="timer-transition" style={{ fontSize: '2.5rem' }}>{transitionTimer}</div>
-        </div>
-      )}
-
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.8rem' }}>
-        <div className="stat-block">
-          <div className="stat-label">Tours</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 900, color: 'var(--accent-green)', textShadow: 'var(--glow-green)' }}>
-            {bike.totalLaps}
-          </div>
-        </div>
-        <div className="stat-block">
-          <div className="stat-label">Distance</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 900, color: 'var(--accent-yellow)' }}>
-            {bike.totalDistanceKm.toFixed(1)}<span style={{ fontSize: '0.9rem', marginLeft: '0.2rem' }}>km</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+const PV_DEFAULTS: Required<PublicViewSettings> = {
+  showClock: true,
+  showRaceDuration: true,
+  showCurrentRider: true,
+  showChrono: true,
+  showGauge: true,
+  showQueue: true,
+  queueMaxEntries: 10,
+  showBikeStats: true,
+  showGlobalStats: true,
 }
 
-function Leaderboard({ race }: { race: Race }) {
-  const enabledBikes = race.settings.enabledBikes ?? { V1: true, V2: true, V3: true }
-  const allLaps = (['V1', 'V2', 'V3'] as const).filter(id => enabledBikes[id]).flatMap(id => race.bikes[id].laps)
-  const byRider = new Map<string, number>()
-  for (const lap of allLaps) byRider.set(lap.riderName, (byRider.get(lap.riderName) ?? 0) + 1)
+function BikeCard({ bike, race, pv }: { bike: BikeState; race: Race; pv: Required<PublicViewSettings> }) {
+  const racePaused = race.status === 'PAUSED' || race.status === 'FINISHED'
 
-  const ranked = Array.from(byRider.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 7)
+  const pausedFrozenMs = racePaused
+    ? bike.pausedLapElapsedMs !== undefined
+      ? bike.pausedLapElapsedMs
+      : race.pausedAt && bike.currentLapStartTimestamp
+        ? Date.parse(race.pausedAt) - Date.parse(bike.currentLapStartTimestamp)
+        : undefined
+    : undefined
 
-  if (ranked.length === 0) return null
+  const pausedTransitionMs = racePaused && race.pausedAt && bike.transitionStartTimestamp
+    ? Date.parse(race.pausedAt) - Date.parse(bike.transitionStartTimestamp)
+    : undefined
+
+  const lapTimer = useTimer(
+    bike.currentLapStartTimestamp,
+    bike.status === 'RUNNING' && !racePaused,
+    pausedFrozenMs,
+  )
+  const transitionTimer = useTimer(
+    bike.transitionStartTimestamp,
+    bike.status === 'TRANSITION' && !racePaused,
+    pausedTransitionMs,
+  )
+
+  const isRunning = bike.status === 'RUNNING'
+  const isTransition = bike.status === 'TRANSITION'
+  const bikeLabel = race.settings.bikeLabels?.[bike.id] ?? bike.label
+  const upcoming = bike.queue.slice(0, pv.queueMaxEntries)
+
+  const gaugeMode = race.settings.lapGaugeMode?.[bike.id] ?? 'fixed'
+  const gaugeFixedMs = race.settings.lapGaugeMs?.[bike.id] ?? race.settings.relayAlertThresholdMs
+
+  const riderLine = bike.currentRiderName
+    ? bike.currentRiderName2
+      ? `${bike.currentRiderName} & ${bike.currentRiderName2}`
+      : bike.currentRiderName
+    : isTransition && bike.currentTransition?.incomingRiderName
+      ? bike.currentTransition.incomingRiderName
+      : null
+
+  const statusColor = isRunning ? 'var(--green)' : isTransition ? 'var(--amber)' : 'var(--text-3)'
+  const badgeClass = isRunning ? 'badge-green' : isTransition ? 'badge-amber' : 'badge-slate'
+  const statusLabel = isRunning ? 'En piste' : isTransition ? 'Transition' : 'En attente'
 
   return (
-    <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1.2rem', minWidth: '220px' }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.7rem', letterSpacing: '0.2em', color: 'var(--text-secondary)', marginBottom: '0.8rem', textTransform: 'uppercase' }}>
-        Top Coureurs
-      </div>
-      {ranked.map(([name, laps], idx) => (
-        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: idx < ranked.length - 1 ? '1px solid var(--border)' : 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ fontFamily: 'var(--font-display)', color: idx === 0 ? 'var(--accent-yellow)' : idx === 1 ? '#c0c0c0' : 'var(--text-secondary)', fontSize: '0.9rem', minWidth: '20px' }}>
-              {idx + 1}
-            </span>
-            <span style={{ fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{name}</span>
-          </div>
-          <span style={{ fontFamily: 'var(--font-display)', color: 'var(--accent-green)', fontSize: '1rem' }}>{laps}</span>
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+
+      {/* ── Card header: bike name, status, rider, chrono, gauge ── */}
+      <div className="card-header" style={{
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        gap: '0.7rem',
+        margin: '0.5rem 0.5rem 0',
+      }}>
+        {/* Bike name + status badge */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>{bikeLabel}</span>
+          <span className={`badge ${badgeClass}`}>{statusLabel}</span>
         </div>
-      ))}
+
+        {/* Current rider */}
+        {pv.showCurrentRider && (
+          <div>
+            <div className="label" style={{ marginBottom: '0.2rem' }}>
+              {isTransition ? 'En transition' : 'Coureur en piste'}
+            </div>
+            {riderLine ? (
+              <div style={{
+                fontWeight: 700,
+                fontSize: 'clamp(1.4rem, 2.2vw, 2.6rem)',
+                color: statusColor,
+                textTransform: 'uppercase',
+                lineHeight: 1.1,
+                letterSpacing: '0.02em',
+                wordBreak: 'break-word',
+              }}>
+                {riderLine}
+              </div>
+            ) : (
+              <div style={{ fontSize: 'clamp(1rem, 1.5vw, 1.4rem)', color: 'var(--text-3)', fontStyle: 'italic' }}>
+                Aucun coureur
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Chrono */}
+        {pv.showChrono && (
+          <div>
+            {isRunning && (
+              <div style={{
+                fontFamily: 'monospace',
+                fontSize: 'clamp(2rem, 3.2vw, 3.8rem)',
+                fontWeight: 700,
+                color: 'var(--green)',
+                lineHeight: 1,
+                letterSpacing: '0.02em',
+              }}>
+                {lapTimer}
+              </div>
+            )}
+            {isTransition && (
+              <>
+                <div className="label" style={{ marginBottom: '0.15rem' }}>Temps de changement</div>
+                <div style={{
+                  fontFamily: 'monospace',
+                  fontSize: 'clamp(1.5rem, 2.3vw, 2.6rem)',
+                  fontWeight: 700,
+                  color: 'var(--amber)',
+                  lineHeight: 1,
+                }}>
+                  {transitionTimer}
+                </div>
+              </>
+            )}
+            {!isRunning && !isTransition && (
+              <div style={{ fontFamily: 'monospace', fontSize: 'clamp(1.5rem, 2vw, 2rem)', color: 'var(--text-3)' }}>
+                --:--.--
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Gauge */}
+        {pv.showGauge && (
+          <LapGauge
+            startTs={bike.currentLapStartTimestamp}
+            running={isRunning && !racePaused}
+            frozenMs={pausedFrozenMs}
+            mode={gaugeMode}
+            fixedMs={gaugeFixedMs}
+            laps={bike.laps}
+            large
+          />
+        )}
+      </div>
+
+      {/* ── Upcoming riders ── */}
+      {pv.showQueue && (
+        <div style={{ flex: 1, padding: '0.6rem 1rem', overflowY: 'auto' }}>
+          <div className="label" style={{ marginBottom: '0.4rem' }}>Prochains coureurs</div>
+          {upcoming.length === 0 ? (
+            <div style={{ color: 'var(--text-3)', fontStyle: 'italic', fontSize: 13 }}>
+              Aucun coureur prévu
+            </div>
+          ) : (
+            <div>
+              {upcoming.map((entry, i) => (
+                <div
+                  key={entry.id}
+                  style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    alignItems: 'center',
+                    padding: '0.35rem 0',
+                    borderBottom: i < upcoming.length - 1 ? '1px solid var(--border)' : 'none',
+                  }}
+                >
+                  <span style={{
+                    fontFamily: 'monospace',
+                    color: 'var(--text-3)',
+                    fontSize: 12,
+                    minWidth: '1.4rem',
+                    flexShrink: 0,
+                  }}>
+                    {i + 1}.
+                  </span>
+                  <span style={{
+                    fontSize: 'clamp(0.85rem, 1.2vw, 1.1rem)',
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.01em',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {entry.riderName}{entry.riderName2 ? ` & ${entry.riderName2}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Bike stats ── */}
+      {pv.showBikeStats && (
+        <div style={{
+          display: 'flex',
+          gap: '1.5rem',
+          padding: '0.55rem 1rem',
+          borderTop: '1px solid var(--border)',
+          background: 'var(--surface-3)',
+          flexShrink: 0,
+        }}>
+          <div>
+            <div className="label">Tours</div>
+            <div style={{
+              fontFamily: 'monospace',
+              fontSize: 'clamp(1.1rem, 1.8vw, 1.7rem)',
+              fontWeight: 700,
+              color: 'var(--green)',
+              lineHeight: 1.1,
+            }}>
+              {bike.totalLaps}
+            </div>
+          </div>
+          <div>
+            <div className="label">Distance</div>
+            <div style={{
+              fontFamily: 'monospace',
+              fontSize: 'clamp(1.1rem, 1.8vw, 1.7rem)',
+              fontWeight: 700,
+              color: 'var(--blue)',
+              lineHeight: 1.1,
+            }}>
+              {bike.totalDistanceKm.toFixed(1)}<span style={{ fontSize: '0.6em', marginLeft: '0.2em' }}>km</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 export default function PublicView() {
-  const { race, error, loading } = useRaceState()
-  const { theme, toggle } = useDayNight()
-
+  const { race, loading, error } = useRaceState()
   const raceTimer = useTimer(race?.startTimestamp, race?.status === 'RUNNING')
+  const { time, date } = useClock({
+    timezone:    race?.settings.timezone ?? 'Europe/Brussels',
+    showSeconds: true,
+    hourFormat:  '24h',
+  })
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <div style={{ fontFamily: 'var(--font-display)', color: 'var(--accent-green)', fontSize: '1.5rem', letterSpacing: '0.3em', animation: 'blink 1s ease-in-out infinite' }}>
-          CONNEXION…
-        </div>
+      <div className="app-layout" style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: 'var(--text-2)', fontSize: 14 }}>Connexion au serveur…</div>
       </div>
     )
   }
 
   if (error || !race) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ fontFamily: 'var(--font-display)', color: 'var(--accent-red)', fontSize: '1.2rem', letterSpacing: '0.1em' }}>SERVEUR HORS LIGNE</div>
-        <div style={{ color: 'var(--text-secondary)' }}>{error}</div>
+      <div className="app-layout" style={{ alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}>
+        <div style={{ fontWeight: 600, color: 'var(--red)', fontSize: 15 }}>Serveur hors ligne</div>
+        <div style={{ color: 'var(--text-2)', fontSize: 13 }}>{error}</div>
       </div>
     )
   }
 
+  const pv: Required<PublicViewSettings> = { ...PV_DEFAULTS, ...race.settings.publicView }
   const enabledBikes = race.settings.enabledBikes ?? { V1: true, V2: true, V3: true }
-  const totalLaps = (['V1', 'V2', 'V3'] as const).filter(id => enabledBikes[id]).reduce((s, id) => s + race.bikes[id].totalLaps, 0)
-  const totalKm = (['V1', 'V2', 'V3'] as const).filter(id => enabledBikes[id]).reduce((s, id) => s + race.bikes[id].totalDistanceKm, 0).toFixed(1)
+  const activeBikeIds = (['V1', 'V2', 'V3'] as BikeId[]).filter(id => enabledBikes[id])
+  const count = activeBikeIds.length
+
+  const totalLaps = activeBikeIds.reduce((s, id) => s + race.bikes[id].totalLaps, 0)
+  const totalKm = activeBikeIds.reduce((s, id) => s + race.bikes[id].totalDistanceKm, 0).toFixed(1)
+
+  const statusBadgeClass = race.status === 'RUNNING' ? 'badge-green' : race.status === 'PAUSED' ? 'badge-amber' : 'badge-slate'
+  const statusLabel = race.status === 'RUNNING' ? 'En cours' : race.status === 'PAUSED' ? '⏸ En pause' : race.status === 'FINISHED' ? 'Terminée' : 'En attente'
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '1rem', gap: '1rem', boxSizing: 'border-box' }}>
-      {/* Top bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 900, letterSpacing: '0.25em', color: 'var(--accent-green)', textShadow: 'var(--glow-green)' }}>
-          24H VÉLO
+    <div className="app-layout">
+
+      {/* ── Header ── */}
+      <div className="app-header" style={{
+        padding: '0.6rem 1rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1rem',
+      }}>
+        {/* Left: race name + status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 160, flexShrink: 0 }}>
+          <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-0.01em' }}>
+            {race.settings.raceName ?? '24h Vélo'}
+          </span>
+          <span className={`badge ${statusBadgeClass}`}>{statusLabel}</span>
         </div>
 
-        {race.status === 'RUNNING' && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.6rem', letterSpacing: '0.2em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Durée course</div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 900, color: 'var(--accent-yellow)', letterSpacing: '0.08em' }}>{raceTimer}</div>
-          </div>
-        )}
-        {race.status === 'PENDING' && (
-          <div style={{ fontFamily: 'var(--font-display)', color: 'var(--text-secondary)', letterSpacing: '0.2em', fontSize: '0.9rem' }}>EN ATTENTE DE DÉPART</div>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.6rem', letterSpacing: '0.15em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total</div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', color: 'var(--accent-cyan)' }}>{totalLaps} tours · {totalKm} km</div>
-          </div>
-          <button className="btn" onClick={toggle} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>
-            {theme === 'night' ? '☀' : '🌙'}
-          </button>
+        {/* Center: clock + optional race duration */}
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          {pv.showClock && (
+            <div style={{
+              fontFamily: 'monospace',
+              fontWeight: 700,
+              fontSize: 'clamp(1.8rem, 3.5vw, 3.8rem)',
+              letterSpacing: '0.04em',
+              lineHeight: 1,
+              color: 'var(--text)',
+            }}>
+              {time}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{date}</div>
+          {pv.showRaceDuration && race.status === 'RUNNING' && (
+            <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2, fontFamily: 'monospace' }}>
+              Course en cours depuis {raceTimer}
+            </div>
+          )}
+          {race.status === 'PAUSED' && (
+            <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 2, fontWeight: 500 }}>Course en pause</div>
+          )}
+          {race.status === 'FINISHED' && (
+            <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 2, fontWeight: 500 }}>Course terminée</div>
+          )}
         </div>
+
+        {/* Right: global stats */}
+        {pv.showGlobalStats && (
+          <div style={{ textAlign: 'right', minWidth: 120, flexShrink: 0 }}>
+            <div className="label" style={{ marginBottom: 2 }}>Total général</div>
+            <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 'clamp(0.9rem, 1.4vw, 1.2rem)', color: 'var(--green)' }}>
+              {totalLaps} tours
+            </div>
+            <div style={{ fontFamily: 'monospace', fontSize: 'clamp(0.8rem, 1.1vw, 1rem)', color: 'var(--blue)' }}>
+              {totalKm} km
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Main bikes area */}
-      <div style={{ display: 'flex', gap: '1rem', flex: 1, flexWrap: 'wrap' }}>
-        <PublicBikeCard bike={race.bikes.V1} alertThresholdMs={race.settings.relayAlertThresholdMs} bikeLabel={race.settings.bikeLabels?.V1 ?? race.bikes.V1.label} />
-        <PublicBikeCard bike={race.bikes.V2} alertThresholdMs={race.settings.relayAlertThresholdMs} bikeLabel={race.settings.bikeLabels?.V2 ?? race.bikes.V2.label} />
-        <Leaderboard race={race} />
+      {/* ── Bike cards grid ── */}
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        padding: '0.75rem',
+        display: 'grid',
+        gap: '0.75rem',
+        gridTemplateColumns: `repeat(${count}, 1fr)`,
+      }}>
+        {activeBikeIds.map(id => (
+          <BikeCard key={id} bike={race.bikes[id]} race={race} pv={pv} />
+        ))}
       </div>
 
-      {/* Footer */}
-      <div style={{ textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.1em' }}>
-        {new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · Circuit {race.settings.circuitDistanceKm} km
-      </div>
     </div>
   )
 }

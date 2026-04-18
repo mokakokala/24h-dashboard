@@ -5,20 +5,38 @@ import type {
 
 const BASE = '/api'
 
+// M1: Always check response.ok so server errors surface as structured messages
+// instead of crashing the app with a JSON parse error on an HTML error page.
+const parseResponse = async <T>(res: Response): Promise<ApiResponse<T>> => {
+  if (!res.ok) {
+    try {
+      return await res.json() as ApiResponse<T>
+    } catch {
+      return { success: false, error: `Erreur serveur (${res.status})`, timestamp: new Date().toISOString() }
+    }
+  }
+  try {
+    return await res.json() as ApiResponse<T>
+  } catch {
+    return { success: false, error: 'Réponse invalide du serveur', timestamp: new Date().toISOString() }
+  }
+}
+
 const post = <T>(url: string, body: unknown): Promise<ApiResponse<T>> =>
-  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json())
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => parseResponse<T>(r))
 
 const put = <T>(url: string, body: unknown): Promise<ApiResponse<T>> =>
-  fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json())
+  fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => parseResponse<T>(r))
 
 const patch = <T>(url: string, body: unknown): Promise<ApiResponse<T>> =>
-  fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json())
+  fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => parseResponse<T>(r))
 
 const del = <T>(url: string): Promise<ApiResponse<T>> =>
-  fetch(url, { method: 'DELETE' }).then(r => r.json())
+  fetch(url, { method: 'DELETE' }).then(r => parseResponse<T>(r))
 
 // Race
-export const getRace = (): Promise<ApiResponse<Race>> => fetch(`${BASE}/race`).then(r => r.json())
+export const getRace = (signal?: AbortSignal): Promise<ApiResponse<Race>> =>
+  fetch(`${BASE}/race`, { signal }).then(r => parseResponse<Race>(r))
 export const startRace  = (): Promise<ApiResponse<Race>> => post(`${BASE}/race/start`,  {})
 export const finishRace  = (): Promise<ApiResponse<Race>> => post(`${BASE}/race/finish`,  {})
 export const reopenRace  = (): Promise<ApiResponse<Race>> => post(`${BASE}/race/reopen`,  {})
@@ -38,20 +56,24 @@ export const canUndo = (): Promise<{ canUndo: boolean }> => fetch(`${BASE}/undo/
 export const pitTour = (payload: TourPayload): Promise<ApiResponse<BikeState>> => post(`${BASE}/pit/tour`, payload)
 export const pitStop = (payload: StopPayload): Promise<ApiResponse<BikeState>> => post(`${BASE}/pit/stop`, payload)
 export const pitStart = (payload: StartPayload): Promise<ApiResponse<BikeState>> => post(`${BASE}/pit/start`, payload)
+// M8: Atomic version — dequeues and starts in one server call
+export const pitStartFromQueue = (payload: StartPayload & { dequeueEntryId?: string }): Promise<ApiResponse<BikeState>> =>
+  post(`${BASE}/pit/start-from-queue`, payload)
 
 // Laps
-export const getLaps = (bikeId?: BikeId): Promise<ApiResponse<Lap[]>> => fetch(`${BASE}/laps${bikeId ? `?bikeId=${bikeId}` : ''}`).then(r => r.json())
+export const getLaps = (bikeId?: BikeId): Promise<ApiResponse<Lap[]>> =>
+  fetch(`${BASE}/laps${bikeId ? `?bikeId=${bikeId}` : ''}`).then(r => parseResponse<Lap[]>(r))
 export const updateLap = (lapId: string, updates: Partial<Lap>): Promise<ApiResponse<Lap>> => put(`${BASE}/laps/${lapId}`, updates)
 export const deleteLap = (lapId: string): Promise<ApiResponse> => del(`${BASE}/laps/${lapId}`)
 
 // Riders
-export const getRiders = (): Promise<ApiResponse<Rider[]>> => fetch(`${BASE}/riders`).then(r => r.json())
+export const getRiders = (): Promise<ApiResponse<Rider[]>> => fetch(`${BASE}/riders`).then(r => parseResponse<Rider[]>(r))
 export const createRider = (name: string, type?: 'animé' | 'autre'): Promise<ApiResponse<Rider>> => post(`${BASE}/riders`, { name, type })
 export const updateRider = (riderId: string, name: string, type?: 'animé' | 'autre'): Promise<ApiResponse<Rider>> => put(`${BASE}/riders/${riderId}`, { name, type })
 export const deleteRider = (riderId: string): Promise<ApiResponse> => del(`${BASE}/riders/${riderId}`)
 
 // Folklo
-export const getFolklo = (): Promise<ApiResponse<FolkloEntry[]>> => fetch(`${BASE}/folklo`).then(r => r.json())
+export const getFolklo = (): Promise<ApiResponse<FolkloEntry[]>> => fetch(`${BASE}/folklo`).then(r => parseResponse<FolkloEntry[]>(r))
 export const createFolklo = (entry: Omit<FolkloEntry, 'id' | 'timestamp'>): Promise<ApiResponse<FolkloEntry>> => post(`${BASE}/folklo`, entry)
 export const updateFolklo = (entryId: string, updates: Partial<FolkloEntry>): Promise<ApiResponse<FolkloEntry>> => put(`${BASE}/folklo/${entryId}`, updates)
 export const deleteFolklo = (entryId: string): Promise<ApiResponse> => del(`${BASE}/folklo/${entryId}`)
@@ -68,10 +90,10 @@ export const exportCsv = (): void => { window.location.href = `${BASE}/exports/c
 
 // Backup
 export const exportBackup = (): void => { window.location.href = `${BASE}/backup/export` }
-export const listBackups = (): Promise<ApiResponse<string[]>> => fetch(`${BASE}/backup/list`).then(r => r.json())
+export const listBackups = (): Promise<ApiResponse<string[]>> => fetch(`${BASE}/backup/list`).then(r => parseResponse<string[]>(r))
 export const restoreBackup = (filename: string): Promise<ApiResponse<Race>> => post(`${BASE}/backup/restore/${filename}`, {})
 export const importBackup = (file: File): Promise<ApiResponse<Race>> => {
   const formData = new FormData()
   formData.append('backup', file)
-  return fetch(`${BASE}/backup/import`, { method: 'POST', body: formData }).then(r => r.json())
+  return fetch(`${BASE}/backup/import`, { method: 'POST', body: formData }).then(r => parseResponse<Race>(r))
 }

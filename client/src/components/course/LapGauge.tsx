@@ -8,6 +8,7 @@ interface Props {
   fixedMs: number
   laps: Lap[]
   frozenMs?: number
+  large?: boolean
 }
 
 function fmtMs(ms: number): string {
@@ -16,7 +17,7 @@ function fmtMs(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export default function LapGauge({ startTs, running, mode, fixedMs, laps, frozenMs }: Props) {
+export default function LapGauge({ startTs, running, mode, fixedMs, laps, frozenMs, large }: Props) {
   const counted = useCountup(startTs, running && !!startTs)
   const elapsed = !running && frozenMs !== undefined ? frozenMs : counted
 
@@ -41,9 +42,12 @@ export default function LapGauge({ startTs, running, mode, fixedMs, laps, frozen
     ? `moy. ${laps.length} tour${laps.length > 1 ? 's' : ''}`
     : 'fixe'
 
+  const barH = large ? 10 : 5
+  const textSz = large ? 13 : 10
+
   return (
     <div style={{ padding: '0 0 0.25rem', visibility: active ? 'visible' : 'hidden' }}>
-      <div style={{ height: 5, background: 'var(--surface-2, #e5e7eb)', borderRadius: 3, overflow: 'hidden' }}>
+      <div style={{ height: barH, background: 'var(--surface-2, #e5e7eb)', borderRadius: 3, overflow: 'hidden' }}>
         <div style={{
           height: '100%',
           width: `${pct}%`,
@@ -52,7 +56,7 @@ export default function LapGauge({ startTs, running, mode, fixedMs, laps, frozen
           transition: 'width 0.5s linear',
         }} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2, fontSize: 10, color: 'var(--text-3, #9ca3af)', fontFamily: 'monospace' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3, fontSize: textSz, color: 'var(--text-3, #9ca3af)', fontFamily: 'monospace' }}>
         <span style={{ color: overrun ? 'var(--red, #ef4444)' : 'inherit' }}>{fmtMs(elapsed)}</span>
         <span>{Math.round(pct)}% · {fmtMs(targetMs)} ({modeLabel})</span>
       </div>

@@ -19,9 +19,9 @@ router.get('/excel', (_req: Request, res: Response) => {
       ['Export', new Date().toLocaleString('fr-BE')],
       [],
       ['Vélo', 'Tours', 'Distance (km)'],
-      ['Grand Vélo (V1)', race.bikes.V1.totalLaps, race.bikes.V1.totalDistanceKm],
-      ['Petit Vélo (V2)', race.bikes.V2.totalLaps, race.bikes.V2.totalDistanceKm],
-      ['Vélo Folklo (V3)', race.bikes.V3.totalLaps, race.bikes.V3.totalDistanceKm],
+      [race.settings.bikeLabels?.V1 ?? 'V1', race.bikes.V1.totalLaps, race.bikes.V1.totalDistanceKm],
+      [race.settings.bikeLabels?.V2 ?? 'V2', race.bikes.V2.totalLaps, race.bikes.V2.totalDistanceKm],
+      [race.settings.bikeLabels?.V3 ?? 'V3', race.bikes.V3.totalLaps, race.bikes.V3.totalDistanceKm],
       ['TOTAL', race.bikes.V1.totalLaps + race.bikes.V2.totalLaps + race.bikes.V3.totalLaps,
         (race.bikes.V1.totalDistanceKm + race.bikes.V2.totalDistanceKm + race.bikes.V3.totalDistanceKm).toFixed(2)],
     ]
@@ -29,11 +29,11 @@ router.get('/excel', (_req: Request, res: Response) => {
     XLSX.utils.book_append_sheet(wb, ws0, 'Résumé')
 
     // ── Sheets 2-4: Laps per bike ─────────────────────────────────────────────
-    const bikeDefs = [
-      { id: 'V1', label: 'V1 Grand Vélo' },
-      { id: 'V2', label: 'V2 Petit Vélo' },
-      { id: 'V3', label: 'V3 Folklo' },
-    ] as const
+    // M15: Use the labels configured in Settings, not hardcoded strings
+    const bikeDefs = (['V1', 'V2', 'V3'] as const).map(id => ({
+      id,
+      label: race.settings.bikeLabels?.[id] ?? race.bikes[id].label,
+    }))
 
     for (const { id, label } of bikeDefs) {
       const bike = race.bikes[id]

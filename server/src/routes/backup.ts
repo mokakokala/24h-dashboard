@@ -23,10 +23,17 @@ router.get('/list', (_req: Request, res: Response) => {
   res.json(response)
 })
 
+// C1: Only accept filenames that look exactly like our generated backup names
+const BACKUP_FILENAME_RE = /^race_state_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/
+
 // POST /api/backup/restore/:filename — restore from a specific backup
 router.post('/restore/:filename', (req: Request, res: Response) => {
   try {
     const { filename } = req.params
+    if (!BACKUP_FILENAME_RE.test(filename)) {
+      res.status(400).json({ success: false, error: 'Invalid backup filename', timestamp: new Date().toISOString() })
+      return
+    }
     const race = restoreFromBackup(filename)
     const response: ApiResponse<Race> = { success: true, data: race, timestamp: new Date().toISOString() }
     res.json(response)

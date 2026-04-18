@@ -65,6 +65,18 @@ export interface HeaderStatConfig {
   showV3Km?: boolean
 }
 
+export interface PublicViewSettings {
+  showClock?: boolean
+  showRaceDuration?: boolean
+  showCurrentRider?: boolean
+  showChrono?: boolean
+  showGauge?: boolean
+  showQueue?: boolean
+  queueMaxEntries?: number
+  showBikeStats?: boolean
+  showGlobalStats?: boolean
+}
+
 export interface RaceSettings {
   relayAlertThresholdMs: number
   lapAlertMs: LapAlertSettings
@@ -85,6 +97,7 @@ export interface RaceSettings {
   clockShowSeconds?: boolean
   clockHourFormat?: '24h' | '12h'
   lapAlertSoundEnabled?: boolean
+  publicView?: PublicViewSettings
 }
 
 export interface Race {
