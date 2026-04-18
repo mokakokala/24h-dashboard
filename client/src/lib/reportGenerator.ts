@@ -61,6 +61,7 @@ function gather(race: Race) {
     ? (race.endTimestamp ? Date.parse(race.endTimestamp) : Date.now()) - Date.parse(race.startTimestamp)
     : 0
 
+  const dist = race.settings.circuitDistanceKm
   const riderMap = new Map<string, { laps: number; ms: number; fastest: number }>()
   for (const lap of allLaps) {
     const r = riderMap.get(lap.riderName) ?? { laps: 0, ms: 0, fastest: Infinity }
@@ -70,8 +71,8 @@ function gather(race: Race) {
   const riders = Array.from(riderMap.entries()).map(([name, s]) => ({
     name,
     laps: s.laps,
-    km: parseFloat((s.laps * 2.6).toFixed(1)),
-    avgSpeed: s.ms > 0 ? ((s.laps * 2.6) / (s.ms / 3_600_000)).toFixed(2) : '—',
+    km: parseFloat((s.laps * dist).toFixed(1)),
+    avgSpeed: s.ms > 0 ? ((s.laps * dist) / (s.ms / 3_600_000)).toFixed(2) : '—',
     fastest: s.fastest < Infinity ? fmtLapShort(s.fastest) : '—',
   })).sort((a, b) => b.laps - a.laps)
 
@@ -79,7 +80,7 @@ function gather(race: Race) {
     const b = race.bikes[id]
     const laps = b.laps
     const totMs = laps.reduce((s, l) => s + l.durationMs, 0)
-    const avgSpeed = totMs > 0 ? ((laps.length * 2.6) / (totMs / 3_600_000)).toFixed(2) : '—'
+    const avgSpeed = totMs > 0 ? (b.totalDistanceKm / (totMs / 3_600_000)).toFixed(2) : '—'
     const fastestMs = laps.length ? Math.min(...laps.map(l => l.durationMs)) : 0
     const ts = b.transitions.filter(t => t.durationMs != null)
     const avgTs = ts.length ? Math.round(ts.reduce((s, t) => s + t.durationMs!, 0) / ts.length) : 0

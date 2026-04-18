@@ -8,7 +8,7 @@ import HistoryTable from '../components/history/HistoryTable'
 import RiderList from '../components/riders/RiderList'
 import AnalyticsTab from '../components/analytics/AnalyticsTab'
 import SettingsTab from '../components/settings/SettingsTab'
-import { startRace, undoAction, resumeRace } from '../api'
+import { startRace, undoAction, resumeRace, reopenRace } from '../api'
 
 export default function LogistiqueView() {
   const { race, loading, error, refresh } = useRaceState()
@@ -104,14 +104,31 @@ export default function LogistiqueView() {
                 </button>
               </div>
             )}
+            {race.status === 'FINISHED' && (
+              <div style={{ padding: '0.75rem 1rem', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>🏁 Course terminée</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                    Les chronomètres sont arrêtés.
+                    {race.endTimestamp && (
+                      <> Fin enregistrée à <strong>{new Date(race.endTimestamp).toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</strong>.</>
+                    )}
+                  </div>
+                </div>
+                <button className="btn" style={{ padding: '0.5rem 1.2rem', fontSize: 13 }}
+                  onClick={async () => { await reopenRace(); refresh() }}>
+                  ↺ Reprendre la course
+                </button>
+              </div>
+            )}
             {(() => {
               const eb = race.settings.enabledBikes ?? { V1: true, V2: true, V3: true }
               const count = [eb.V1, eb.V2, eb.V3].filter(Boolean).length
               return (
                 <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: '0.75rem', height: '100%', gridTemplateColumns: `repeat(${count}, 1fr)` }}>
-                  {eb.V1 && <CourseColumn bike={race.bikes.V1} riders={race.riders} settings={race.settings} onUpdate={refresh} scrollTrigger={scrollTrigger} racePaused={race.status === 'PAUSED'} pausedAt={race.pausedAt} />}
-                  {eb.V2 && <CourseColumn bike={race.bikes.V2} riders={race.riders} settings={race.settings} onUpdate={refresh} scrollTrigger={scrollTrigger} racePaused={race.status === 'PAUSED'} pausedAt={race.pausedAt} />}
-                  {eb.V3 && <FolkloColumn bike={race.bikes.V3} riders={race.riders} settings={race.settings} onUpdate={refresh} scrollTrigger={scrollTrigger} racePaused={race.status === 'PAUSED'} pausedAt={race.pausedAt} />}
+                  {eb.V1 && <CourseColumn bike={race.bikes.V1} riders={race.riders} settings={race.settings} onUpdate={refresh} scrollTrigger={scrollTrigger} racePaused={race.status === 'PAUSED' || race.status === 'FINISHED'} pausedAt={race.pausedAt ?? race.endTimestamp} />}
+                  {eb.V2 && <CourseColumn bike={race.bikes.V2} riders={race.riders} settings={race.settings} onUpdate={refresh} scrollTrigger={scrollTrigger} racePaused={race.status === 'PAUSED' || race.status === 'FINISHED'} pausedAt={race.pausedAt ?? race.endTimestamp} />}
+                  {eb.V3 && <FolkloColumn bike={race.bikes.V3} riders={race.riders} settings={race.settings} onUpdate={refresh} scrollTrigger={scrollTrigger} racePaused={race.status === 'PAUSED' || race.status === 'FINISHED'} pausedAt={race.pausedAt ?? race.endTimestamp} />}
                 </div>
               )
             })()}

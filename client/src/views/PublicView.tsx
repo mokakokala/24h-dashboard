@@ -92,7 +92,8 @@ function PublicBikeCard({ bike, alertThresholdMs, bikeLabel }: { bike: BikeState
 }
 
 function Leaderboard({ race }: { race: Race }) {
-  const allLaps = [...race.bikes.V1.laps, ...race.bikes.V2.laps]
+  const enabledBikes = race.settings.enabledBikes ?? { V1: true, V2: true, V3: true }
+  const allLaps = (['V1', 'V2', 'V3'] as const).filter(id => enabledBikes[id]).flatMap(id => race.bikes[id].laps)
   const byRider = new Map<string, number>()
   for (const lap of allLaps) byRider.set(lap.riderName, (byRider.get(lap.riderName) ?? 0) + 1)
 
@@ -147,8 +148,9 @@ export default function PublicView() {
     )
   }
 
-  const totalLaps = race.bikes.V1.totalLaps + race.bikes.V2.totalLaps
-  const totalKm = ((race.bikes.V1.totalDistanceKm + race.bikes.V2.totalDistanceKm)).toFixed(1)
+  const enabledBikes = race.settings.enabledBikes ?? { V1: true, V2: true, V3: true }
+  const totalLaps = (['V1', 'V2', 'V3'] as const).filter(id => enabledBikes[id]).reduce((s, id) => s + race.bikes[id].totalLaps, 0)
+  const totalKm = (['V1', 'V2', 'V3'] as const).filter(id => enabledBikes[id]).reduce((s, id) => s + race.bikes[id].totalDistanceKm, 0).toFixed(1)
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '1rem', gap: '1rem', boxSizing: 'border-box' }}>
@@ -188,7 +190,7 @@ export default function PublicView() {
 
       {/* Footer */}
       <div style={{ textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.1em' }}>
-        {new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · Circuit 2.6 km
+        {new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · Circuit {race.settings.circuitDistanceKm} km
       </div>
     </div>
   )

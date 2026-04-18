@@ -11,7 +11,7 @@ const buildBikeStats = (bike: BikeState) => {
   const laps = bike.laps
   if (!laps.length) return null
   const totalMs = laps.reduce((s, l) => s + l.durationMs, 0)
-  const avgSpeed = totalMs > 0 ? parseFloat(((laps.length * 2.6) / (totalMs / 3_600_000)).toFixed(2)) : 0
+  const avgSpeed = totalMs > 0 ? parseFloat((bike.totalDistanceKm / (totalMs / 3_600_000)).toFixed(2)) : 0
   const durations = laps.map(l => l.durationMs)
   const fastestLap = laps.reduce((best, l) => l.durationMs < best.durationMs ? l : best, laps[0])
   const slowestLap = laps.reduce((worst, l) => l.durationMs > worst.durationMs ? l : worst, laps[0])
@@ -38,6 +38,7 @@ interface RiderStat {
 }
 
 const buildRiderStats = (race: Race, enabledIds: BikeId[]): RiderStat[] => {
+  const dist = race.settings.circuitDistanceKm
   const allLaps = enabledIds.flatMap(id => race.bikes[id].laps)
   const map = new Map<string, Lap[]>()
   for (const lap of allLaps) {
@@ -46,9 +47,9 @@ const buildRiderStats = (race: Race, enabledIds: BikeId[]): RiderStat[] => {
   }
   return Array.from(map.entries()).map(([name, laps]) => {
     const totalMs = laps.reduce((s, l) => s + l.durationMs, 0)
-    const avgSpeed = totalMs > 0 ? parseFloat(((laps.length * 2.6) / (totalMs / 3_600_000)).toFixed(2)) : 0
+    const avgSpeed = totalMs > 0 ? parseFloat(((laps.length * dist) / (totalMs / 3_600_000)).toFixed(2)) : 0
     const durations = laps.map(l => l.durationMs)
-    return { name, laps, totalLaps: laps.length, totalKm: parseFloat((laps.length * 2.6).toFixed(2)), avgSpeed, fastestMs: Math.min(...durations), slowestMs: Math.max(...durations), totalMs }
+    return { name, laps, totalLaps: laps.length, totalKm: parseFloat((laps.length * dist).toFixed(2)), avgSpeed, fastestMs: Math.min(...durations), slowestMs: Math.max(...durations), totalMs }
   }).sort((a, b) => b.totalLaps - a.totalLaps)
 }
 
@@ -89,7 +90,7 @@ function LapPopup({ lap, label, bikeLabels, onClose }: { lap: Lap; label: string
 }
 
 // ─── Rider detail modal ───────────────────────────────────────────────────────
-function RiderModal({ name, allLaps, bikeLabels, onClose }: { name: string; allLaps: Lap[]; bikeLabels: Record<BikeId, string>; onClose: () => void }) {
+function RiderModal({ name, allLaps, bikeLabels, circuitDistanceKm, onClose }: { name: string; allLaps: Lap[]; bikeLabels: Record<BikeId, string>; circuitDistanceKm: number; onClose: () => void }) {
   const [filter, setFilter] = useState<BikeId | 'all'>('all')
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -102,7 +103,7 @@ function RiderModal({ name, allLaps, bikeLabels, onClose }: { name: string; allL
   const sorted = [...filtered].sort((a, b) => Date.parse(a.startTimestamp) - Date.parse(b.startTimestamp))
   const totalMs = filtered.reduce((s, l) => s + l.durationMs, 0)
   const fastestMs = filtered.length ? Math.min(...filtered.map(l => l.durationMs)) : 0
-  const avgSpeed = totalMs > 0 ? ((filtered.length * 2.6) / (totalMs / 3_600_000)).toFixed(2) : '0'
+  const avgSpeed = totalMs > 0 ? ((filtered.length * circuitDistanceKm) / (totalMs / 3_600_000)).toFixed(2) : '0'
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -135,7 +136,7 @@ function RiderModal({ name, allLaps, bikeLabels, onClose }: { name: string; allL
               { label: 'Plus rapide', value: fastestMs ? formatMs(fastestMs) : '—', color: 'var(--green)' },
               { label: 'Tps moy./tour', value: filtered.length ? formatMs(Math.round(totalMs / filtered.length)) : '—', color: 'var(--amber)' },
               { label: 'Vitesse moy.', value: `${avgSpeed} km/h`, color: 'var(--blue)' },
-              { label: 'Distance', value: `${(filtered.length * 2.6).toFixed(1)} km`, color: 'var(--text)' },
+              { label: 'Distance', value: `${(filtered.length * circuitDistanceKm).toFixed(1)} km`, color: 'var(--text)' },
             ].map(s => (
               <div key={s.label} style={{ padding: '0.4rem 0.5rem', background: 'var(--surface-2)', borderRadius: 6 }}>
                 <div className="label" style={{ marginBottom: 2 }}>{s.label}</div>
@@ -464,6 +465,7 @@ export default function AnalyticsTab({ race }: Props) {
           name={riderModal}
           allLaps={allLaps}
           bikeLabels={allBikeLabels}
+          circuitDistanceKm={race.settings.circuitDistanceKm}
           onClose={() => setRiderModal(null)}
         />
       )}

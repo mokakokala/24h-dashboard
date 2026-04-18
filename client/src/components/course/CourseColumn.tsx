@@ -145,9 +145,13 @@ export default function CourseColumn({ bike, riders, settings, onUpdate, scrollT
     if (!isAlert) alertFiredRef.current = false
   }, [isAlert, settings.lapAlertSoundEnabled])
 
-  // Frozen lap elapsed when race is paused (no maintenance mode active)
-  const pausedFrozenMs = racePaused && !bike.maintenanceMode && bike.pausedLapElapsedMs !== undefined
-    ? bike.pausedLapElapsedMs
+  // Frozen lap elapsed when race is paused or finished
+  const pausedFrozenMs = racePaused && !bike.maintenanceMode
+    ? bike.pausedLapElapsedMs !== undefined
+      ? bike.pausedLapElapsedMs
+      : (pausedAt && bike.currentLapStartTimestamp
+        ? Date.parse(pausedAt) - Date.parse(bike.currentLapStartTimestamp)
+        : undefined)
     : undefined
 
   // Frozen transition elapsed when race is paused
@@ -435,9 +439,9 @@ export default function CourseColumn({ bike, riders, settings, onUpdate, scrollT
                     editQueue?.entryId === row.queueEntry?.id ? (
                       <RiderInput
                         riders={riders}
-                        value={editQueue.value}
+                        value={editQueue!.value}
                         onChange={v => setEditQueue(prev => prev ? { ...prev, value: v } : null)}
-                        onSubmit={(name) => saveQueueName(row.queueEntry!.id, name ?? editQueue.value)}
+                        onSubmit={(name) => saveQueueName(row.queueEntry!.id, name ?? editQueue!.value)}
                         onCancel={() => setEditQueue(null)}
                         autoFocus
                         animéOnly={isAniméMode}

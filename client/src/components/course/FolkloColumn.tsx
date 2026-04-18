@@ -105,7 +105,11 @@ export default function FolkloColumn({ bike, riders, settings, onUpdate, scrollT
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const frozenLapMs = bike.maintenanceMode && bike.maintenanceStartTimestamp && bike.currentLapStartTimestamp
     ? Date.parse(bike.maintenanceStartTimestamp) - Date.parse(bike.currentLapStartTimestamp)
-    : bike.pausedLapElapsedMs
+    : bike.pausedLapElapsedMs !== undefined
+    ? bike.pausedLapElapsedMs
+    : (racePaused && pausedAt && bike.currentLapStartTimestamp
+      ? Date.parse(pausedAt) - Date.parse(bike.currentLapStartTimestamp)
+      : undefined)
 
   // Frozen transition elapsed when race is paused
   const pausedTransitionMs = racePaused && pausedAt && bike.transitionStartTimestamp
@@ -477,7 +481,7 @@ export default function FolkloColumn({ bike, riders, settings, onUpdate, scrollT
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         <RiderInput
                           riders={riders}
-                          value={editQueue.value}
+                          value={editQueue!.value}
                           onChange={v => setEditQueue(prev => prev ? { ...prev, value: v } : null)}
                           onCancel={() => setEditQueue(null)}
                           placeholder="Rouleur 1 *"
@@ -486,9 +490,9 @@ export default function FolkloColumn({ bike, riders, settings, onUpdate, scrollT
                         />
                         <RiderInput
                           riders={riders}
-                          value={editQueue.value2}
+                          value={editQueue!.value2}
                           onChange={v => setEditQueue(prev => prev ? { ...prev, value2: v } : null)}
-                          onSubmit={(name2) => saveQueueEntry(row.queueEntry!.id, editQueue.value, name2 ?? editQueue.value2)}
+                          onSubmit={(name2) => saveQueueEntry(row.queueEntry!.id, editQueue!.value, name2 ?? editQueue!.value2)}
                           onCancel={() => setEditQueue(null)}
                           placeholder="Rouleur 2"
                           animéOnly={isAniméMode}

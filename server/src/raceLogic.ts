@@ -1,17 +1,16 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Race, BikeId, Lap, Transition, TourPayload, StopPayload, StartPayload } from './types.js'
 
-const DISTANCE_KM = 2.6
-
-const computeSpeed = (durationMs: number): number => {
+const computeSpeed = (durationMs: number, distKm: number): number => {
   if (durationMs <= 0) return 0
-  return parseFloat(((DISTANCE_KM / (durationMs / 3_600_000))).toFixed(2))
+  return parseFloat(((distKm / (durationMs / 3_600_000))).toFixed(2))
 }
 
 // ─── TOUR ─────────────────────────────────────────────────────────────────────
 
 export const handleTour = (race: Race, payload: TourPayload): Race => {
   const bike = race.bikes[payload.bikeId]
+  const distKm = race.settings.circuitDistanceKm
 
   if (bike.status !== 'RUNNING') {
     throw new Error(`Bike ${payload.bikeId} is not RUNNING (current: ${bike.status})`)
@@ -31,12 +30,12 @@ export const handleTour = (race: Race, payload: TourPayload): Race => {
     riderId2: payload.riderId2,
     riderName2: payload.riderName2,
     lapNumber: bike.totalLaps + 1,
-    distanceKm: DISTANCE_KM,
+    distanceKm: distKm,
     durationMs,
     startTimestamp: bike.currentLapStartTimestamp,
     endTimestamp: now,
     type: 'TOUR',
-    speedKmh: computeSpeed(durationMs),
+    speedKmh: computeSpeed(durationMs, distKm),
   }
 
   const updatedBike = {
@@ -47,7 +46,7 @@ export const handleTour = (race: Race, payload: TourPayload): Race => {
     currentRiderName2: payload.riderName2,
     currentLapStartTimestamp: now,
     totalLaps: bike.totalLaps + 1,
-    totalDistanceKm: parseFloat(((bike.totalLaps + 1) * DISTANCE_KM).toFixed(2)),
+    totalDistanceKm: parseFloat(((bike.totalLaps + 1) * distKm).toFixed(2)),
     laps: [...bike.laps, lap],
   }
 
@@ -61,6 +60,7 @@ export const handleTour = (race: Race, payload: TourPayload): Race => {
 
 export const handleStop = (race: Race, payload: StopPayload): Race => {
   const bike = race.bikes[payload.bikeId]
+  const distKm = race.settings.circuitDistanceKm
 
   if (bike.status !== 'RUNNING') {
     throw new Error(`Bike ${payload.bikeId} is not RUNNING (current: ${bike.status})`)
@@ -80,12 +80,12 @@ export const handleStop = (race: Race, payload: StopPayload): Race => {
     riderId2: bike.currentRiderId2,
     riderName2: bike.currentRiderName2,
     lapNumber: bike.totalLaps + 1,
-    distanceKm: DISTANCE_KM,
+    distanceKm: distKm,
     durationMs,
     startTimestamp: bike.currentLapStartTimestamp,
     endTimestamp: now,
     type: 'RELAY_END',
-    speedKmh: computeSpeed(durationMs),
+    speedKmh: computeSpeed(durationMs, distKm),
   }
 
   const transition: Transition = {
@@ -104,7 +104,7 @@ export const handleStop = (race: Race, payload: StopPayload): Race => {
     currentLapStartTimestamp: undefined,
     transitionStartTimestamp: now,
     totalLaps: bike.totalLaps + 1,
-    totalDistanceKm: parseFloat(((bike.totalLaps + 1) * DISTANCE_KM).toFixed(2)),
+    totalDistanceKm: parseFloat(((bike.totalLaps + 1) * distKm).toFixed(2)),
     laps: [...bike.laps, lap],
     currentTransition: transition,
   }
@@ -163,8 +163,9 @@ export const handleStart = (race: Race, payload: StartPayload): Race => {
 
 export const recomputeBikeTotals = (race: Race, bikeId: BikeId): Race => {
   const bike = race.bikes[bikeId]
+  const distKm = race.settings.circuitDistanceKm
   const totalLaps = bike.laps.length
-  const totalDistanceKm = parseFloat((totalLaps * DISTANCE_KM).toFixed(2))
+  const totalDistanceKm = parseFloat((totalLaps * distKm).toFixed(2))
 
   const renumberedLaps = bike.laps.map((lap, i) => ({ ...lap, lapNumber: i + 1 }))
 

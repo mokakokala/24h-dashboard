@@ -820,7 +820,7 @@ export default function SettingsTab({ race, onUpdate, onRestore }: Props) {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', gap: '1rem', height: '100%', minHeight: 0 }}>
+    <div style={{ display: 'flex', gap: '1rem', height: '100%', minHeight: 0, maxWidth: 860, margin: '0 auto', width: '100%' }}>
 
       {/* ── Sidebar ── */}
       <div style={{ width: 180, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>

@@ -71,7 +71,7 @@ router.get('/excel', (_req: Request, res: Response) => {
         s.laps,
         formatMsExcel(s.totalMs),
         formatMsExcel(s.fastestMs === Infinity ? 0 : s.fastestMs),
-        s.totalMs > 0 ? ((s.laps * 2.6) / (s.totalMs / 3_600_000)).toFixed(2) : '0',
+        s.totalMs > 0 ? ((s.laps * race.settings.circuitDistanceKm) / (s.totalMs / 3_600_000)).toFixed(2) : '0',
       ])
     const wsRiders = XLSX.utils.aoa_to_sheet([riderHeader, ...riderRows])
     wsRiders['!cols'] = [{ wch: 22 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 18 }]
