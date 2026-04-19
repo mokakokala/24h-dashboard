@@ -3,7 +3,7 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import type { Race, BikeState, RaceSettings } from './types.js'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
+const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), 'data')
 const BACKUPS_DIR = path.join(DATA_DIR, 'backups')
 const STATE_FILE = path.join(DATA_DIR, 'race_state.json')
 const TEMP_FILE = path.join(DATA_DIR, 'race_state.tmp')
