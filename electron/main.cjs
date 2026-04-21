@@ -1,23 +1,38 @@
 'use strict'
 
 const { app, BrowserWindow, dialog, shell } = require('electron')
-const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const http = require('http')
+const fs   = require('fs')
+const { pathToFileURL } = require('url')
+
+// ─── File Logger ──────────────────────────────────────────────────────────────
+
+let _logPath = null
+function log(msg) {
+  const line = `${new Date().toISOString()} ${msg}\n`
+  try { process.stdout.write(line) } catch (_) {}
+  try {
+    if (!_logPath) {
+      _logPath = path.join(app.getPath('logs'), '24h-velo-main.log')
+      fs.mkdirSync(path.dirname(_logPath), { recursive: true })
+    }
+    fs.appendFileSync(_logPath, line)
+  } catch (_) {}
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SERVER_PORT    = 3001
-const SERVER_URL     = `http://127.0.0.1:${SERVER_PORT}`
-const HEALTH_URL     = `${SERVER_URL}/api/health`
-const POLL_INTERVAL  = 300
-const POLL_TIMEOUT   = 15_000
+const SERVER_PORT   = 3001
+const SERVER_URL    = `http://127.0.0.1:${SERVER_PORT}`
+const HEALTH_URL    = `${SERVER_URL}/api/health`
+const POLL_INTERVAL = 300
+const POLL_TIMEOUT  = 15_000
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let mainWindow    = null
-let serverProcess = null
-let serverReady   = false
+let mainWindow  = null
+let serverReady = false
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -32,53 +47,9 @@ function getUserDataDir() {
   return path.join(app.getPath('userData'), 'data')
 }
 
-// ─── Loading Screen ───────────────────────────────────────────────────────────
-
-const LOADING_HTML = `data:text/html;charset=utf-8,<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: %230f172a;
-    color: %23e2e8f0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.5px; }
-  p  { font-size: 0.9rem; color: %2394a3b8; margin-bottom: 2.5rem; }
-  .spinner {
-    width: 36px; height: 36px;
-    border: 3px solid %23334155;
-    border-top-color: %2360a5fa;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .status { margin-top: 1.5rem; font-size: 0.78rem; color: %23475569; }
-</style>
-</head>
-<body>
-  <h1>24h Velo</h1>
-  <p>Dashboard de course</p>
-  <div class="spinner"></div>
-  <div class="status" id="s">Demarrage du serveur...</div>
-  <script>
-    let d = 0
-    setInterval(() => {
-      d = (d + 1) % 4
-      document.getElementById('s').textContent = 'En attente' + '.'.repeat(d + 1)
-    }, 350)
-  </script>
-</body>
-</html>`
+function getLoadingHtmlPath() {
+  return path.join(app.getAppPath(), 'electron', 'loading.html')
+}
 
 // ─── Health Poll ──────────────────────────────────────────────────────────────
 
@@ -87,15 +58,11 @@ function pollHealth() {
     const deadline = Date.now() + POLL_TIMEOUT
     const attempt = () => {
       if (Date.now() > deadline) {
-        return reject(new Error(`Le serveur n'a pas repondu en ${POLL_TIMEOUT / 1000}s`))
+        return reject(new Error(`Le serveur n'a pas répondu en ${POLL_TIMEOUT / 1000}s`))
       }
       const req = http.get(HEALTH_URL, (res) => {
-        if (res.statusCode === 200) {
-          res.resume()
-          resolve(true)
-        } else {
-          setTimeout(attempt, POLL_INTERVAL)
-        }
+        if (res.statusCode === 200) { res.resume(); resolve(true) }
+        else setTimeout(attempt, POLL_INTERVAL)
       })
       req.on('error', () => setTimeout(attempt, POLL_INTERVAL))
       req.setTimeout(1000, () => { req.destroy(); setTimeout(attempt, POLL_INTERVAL) })
@@ -104,52 +71,43 @@ function pollHealth() {
   })
 }
 
-// ─── Server Lifecycle ─────────────────────────────────────────────────────────
+// ─── Server Startup ───────────────────────────────────────────────────────────
 
-function startServer() {
+async function startServer() {
   const entryPath = getServerEntryPath()
   const dataDir   = getUserDataDir()
 
-  console.log(`[electron] Starting server: ${entryPath}`)
-  console.log(`[electron] DATA_DIR: ${dataDir}`)
+  log(`[electron] Server entry: ${entryPath}`)
+  log(`[electron] DATA_DIR: ${dataDir}`)
 
-  // utilityProcess runs inside Electron's built-in Node — supports ES modules,
-  // no need to bundle a separate node binary.
-  const { utilityProcess } = require('electron')
-  serverProcess = utilityProcess.fork(entryPath, [], {
-    env: {
-      ...process.env,
-      DATA_DIR: dataDir,
-      PORT:     String(SERVER_PORT),
-      NODE_ENV: 'production',
-    },
-    stdio: 'pipe',
-  })
+  if (!fs.existsSync(entryPath)) {
+    throw new Error(`Fichier serveur introuvable: ${entryPath}`)
+  }
 
-  serverProcess.stdout.on('data', (d) => process.stdout.write(`[server] ${d}`))
-  serverProcess.stderr.on('data', (d) => process.stderr.write(`[server] ${d}`))
+  // Set env vars before importing — persistence.ts reads DATA_DIR at module load
+  process.env.DATA_DIR = dataDir
+  process.env.PORT     = String(SERVER_PORT)
+  process.env.NODE_ENV = 'production'
 
-  serverProcess.on('exit', (code) => {
-    console.log(`[electron] Server exited with code ${code}`)
-    if (mainWindow && !app.isQuitting) {
-      dialog.showErrorBox(
-        '24h Vélo — Erreur serveur',
-        `Le serveur s'est arrêté de façon inattendue (code: ${code}).\nRelancez l'application.`
-      )
+  // Dynamic import runs the server in the same process as Electron.
+  // No separate Node binary needed — works reliably in packaged apps.
+  log('[electron] Importing server module...')
+  try {
+    await import(pathToFileURL(entryPath).href)
+    log('[electron] Server module imported')
+  } catch (err) {
+    if (err.code === 'EADDRINUSE') {
+      log('[electron] Port already in use — assuming server is running')
+    } else {
+      throw err
     }
-  })
-}
-
-function stopServer() {
-  if (serverProcess) {
-    serverProcess.kill()
-    serverProcess = null
   }
 }
 
 // ─── Window Management ────────────────────────────────────────────────────────
 
 function createWindow() {
+  log('[electron] Creating BrowserWindow')
   mainWindow = new BrowserWindow({
     width:           1400,
     height:          900,
@@ -165,12 +123,31 @@ function createWindow() {
     },
   })
 
-  mainWindow.loadURL(LOADING_HTML)
-  mainWindow.once('ready-to-show', () => mainWindow.show())
+  const loadingPath = getLoadingHtmlPath()
+  if (fs.existsSync(loadingPath)) {
+    mainWindow.loadFile(loadingPath)
+  } else {
+    mainWindow.loadURL('about:blank')
+  }
+
+  mainWindow.once('ready-to-show', () => {
+    log('[electron] Window ready — showing')
+    mainWindow.show()
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 
-  // Open external links in system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(SERVER_URL)) {
+      // Internal app URL — open in a new Electron window
+      const popup = new BrowserWindow({
+        width: 1280, height: 800,
+        title: '24h Vélo — Vue publique',
+        backgroundColor: '#0f172a',
+        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+      })
+      popup.loadURL(url)
+      return { action: 'deny' }
+    }
     if (url.startsWith('http')) shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -178,23 +155,47 @@ function createWindow() {
 
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
 
+// Single instance lock — focus existing window instead of launching duplicate
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+  process.exit(0)
+}
+app.on('second-instance', () => {
+  if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus() }
+})
+
+// Disable hardware acceleration — required for unsigned apps on macOS 14 Sonoma
+app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('no-sandbox')
+
 app.whenReady().then(async () => {
+  log('[electron] app ready')
+
   createWindow()
-  startServer()
 
   try {
-    await pollHealth()
-    serverReady = true
-    console.log('[electron] Server ready — loading app')
-    if (mainWindow) mainWindow.loadURL(SERVER_URL)
+    await startServer()
   } catch (err) {
-    console.error('[electron] Server startup failed:', err.message)
-    dialog.showErrorBox(
-      '24h Vélo — Échec du démarrage',
-      `Le serveur n'a pas démarré dans les temps (15 secondes).\n\nDétail: ${err.message}`
-    )
+    log(`[electron] FATAL: ${err.message}`)
+    dialog.showErrorBox('24h Vélo — Erreur', `Impossible de démarrer le serveur:\n${err.message}`)
     app.quit()
     return
+  }
+
+  try {
+    log('[electron] Polling /api/health...')
+    await pollHealth()
+    serverReady = true
+    log('[electron] Server ready — loading app')
+    if (mainWindow) mainWindow.loadURL(SERVER_URL)
+  } catch (err) {
+    log(`[electron] Health poll failed: ${err.message}`)
+    dialog.showErrorBox(
+      '24h Vélo — Démarrage échoué',
+      `Le serveur n'a pas répondu dans les temps.\n\nDétail: ${err.message}`
+    )
+    app.quit()
   }
 
   setupAutoUpdater()
@@ -208,19 +209,18 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
     if (serverReady) mainWindow.loadURL(SERVER_URL)
-    else mainWindow.loadURL(LOADING_HTML)
   }
 })
 
 app.on('before-quit', () => {
-  app.isQuitting = true
-  stopServer()
+  log('[electron] Quitting')
 })
 
-// Block navigation outside localhost (security)
 app.on('web-contents-created', (_e, contents) => {
   contents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(SERVER_URL)) event.preventDefault()
+    if (!url.startsWith(SERVER_URL) && !url.startsWith('file://') && url !== 'about:blank') {
+      event.preventDefault()
+    }
   })
 })
 
@@ -229,18 +229,23 @@ app.on('web-contents-created', (_e, contents) => {
 function setupAutoUpdater() {
   if (!app.isPackaged) return
 
+  let autoUpdater
+  try {
+    autoUpdater = require('electron-updater').autoUpdater
+  } catch (e) {
+    log(`[updater] not available: ${e.message}`)
+    return
+  }
+
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('update-available', (info) => {
     dialog.showMessageBox(mainWindow, {
-      type:    'info',
-      title:   'Mise à jour disponible',
-      message: `Une nouvelle version (${info.version}) est disponible.\nVoulez-vous la télécharger ?`,
+      type: 'info', title: 'Mise à jour disponible',
+      message: `Version ${info.version} disponible. Télécharger ?`,
       buttons: ['Télécharger', 'Plus tard'],
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.downloadUpdate()
-    })
+    }).then(({ response }) => { if (response === 0) autoUpdater.downloadUpdate() })
   })
 
   autoUpdater.on('download-progress', (p) => {
@@ -251,24 +256,14 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('update-downloaded', () => {
-    if (mainWindow) {
-      mainWindow.setProgressBar(-1)
-      mainWindow.setTitle('24h Vélo — Dashboard')
-    }
+    if (mainWindow) { mainWindow.setProgressBar(-1); mainWindow.setTitle('24h Vélo — Dashboard') }
     dialog.showMessageBox(mainWindow, {
-      type:    'info',
-      title:   'Mise à jour prête',
-      message: "La mise à jour a été téléchargée.\nElle sera installée à la prochaine fermeture.",
+      type: 'info', title: 'Mise à jour prête',
+      message: "Mise à jour téléchargée. Redémarrer pour installer ?",
       buttons: ['Redémarrer maintenant', 'Plus tard'],
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall()
-    })
+    }).then(({ response }) => { if (response === 0) autoUpdater.quitAndInstall() })
   })
 
-  autoUpdater.on('error', (err) => {
-    console.error('[updater]', err.message)
-  })
-
-  // Check 5s after startup to not block initial load
+  autoUpdater.on('error', (err) => log(`[updater] ${err.message}`))
   setTimeout(() => autoUpdater.checkForUpdates(), 5_000)
 }
